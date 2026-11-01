@@ -44,7 +44,7 @@ int main() {
             auto source = handles.find(a);
 
             if (source == handles.end() || !source->second) {
-                std::cout << "error " << a << "missing\n";
+                std::cout << "error " << a << " missing\n";
             } else if (handles.count(b)) {
                 std::cout << "error " << b << " exists\n";
             } else {
@@ -56,12 +56,14 @@ int main() {
             if (it != handles.end()) {
                 it->second.reset();
                 handles.erase(it);
+            } else {
+                std::cout << "error " << a << " missing\n";
             }
         } else if (cmd == "watch") {
             // TODO: observer b watches the object behind a, without owning it
             auto source = handles.find(a);
             if (source == handles.end() || !source->second) {
-                std::cout << "error " << a << "missing\n";
+                std::cout << "error " << a << " missing\n";
             } else {
                 observers[b] = source->second;
             }
