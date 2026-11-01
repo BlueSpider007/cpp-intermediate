@@ -43,6 +43,7 @@ int main() {
         } else if (cmd == "drop") {
             // TODO: release the handle named a
             handles[a].reset();
+            handles.erase(a);
         } else if (cmd == "watch") {
             // TODO: observer b watches the object behind a, without owning it
             observers[b] = std::weak_ptr<Resource>(handles[a]);
@@ -62,7 +63,7 @@ int main() {
     }
 
     // TODO: release every remaining handle, in sorted-name order
-    for (auto i : handles) {
+    for (auto &i : handles) {
         i.second.reset();
     }
     return 0;
