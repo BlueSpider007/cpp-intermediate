@@ -1,54 +1,144 @@
 #include <cstddef>
+#include <cstdlib>
 #include <iostream>
+#include <string>
 
-// Return a pointer to the LAST occurrence of the largest value in [first,
-// last). Return last itself when the range is empty.
-const int *lastMax(const int *first, const int *last) {
-    // TODO: walk the range with a pointer and remember where the best value
-    // sits
-    const int *max = first;
-    for (const int *p = first; p < last; ++p) {
-        if (*p >= *max)
-            max = p;
+// ---- GIVEN, do not edit: replaces the library's new[] and delete[] so every
+// block is counted ----
+static int g_live = 0;
+static void *g_blocks[256];
+
+void *operator new[](std::size_t n) {
+    void *p = std::malloc(n ? n : 1);
+    if (!p)
+        std::exit(3); // allocation can fail; this program just stops
+    for (int i = 0; i < 256; ++i) {
+        if (!g_blocks[i]) {
+            g_blocks[i] = p;
+            break;
+        }
     }
-    return max;
+    ++g_live;
+    return p;
+}
+static void release_block(void *p) {
+    if (!p)
+        return; // delete[] on nullptr does nothing
+    for (int i = 0; i < 256; ++i) {
+        if (g_blocks[i] == p) {
+            g_blocks[i] = nullptr;
+            --g_live;
+            std::free(p);
+            return;
+        }
+    }
+    std::cout << "double delete[] detected" << std::endl;
+    std::abort();
+}
+void operator delete[](void *p) noexcept { release_block(p); }
+void operator delete[](void *p, std::size_t) noexcept { release_block(p); }
+// ---- end of given code ----
+
+struct IntArray {
+    int *data; // nullptr while cap == 0
+    int size;  // elements in use
+    int cap;   // elements the block can hold
+};
+
+// Append value. A full block (size == cap) must first grow: capacity 0 -> 1,
+// then doubles.
+void push(IntArray &a, int value) {
+    // TODO: grow the block when it is full, then store value
+    int need = a.size + 1;
+    int room = a.cap;
+    while (room < need)
+        room = (room == 0) ? 1 : room * 2;
+    if (room != a.cap) {
+        int *bigger = new int[room];
+        for (int i = 0; i < a.size; ++i) {
+            bigger[i] = a.data[i];
+        }
+        delete[] a.data;
+        a.data = bigger;
+        a.cap = room;
+    }
+    a.data[a.size] = value;
+    a.size = need;
 }
 
-// Reverse the elements of [first, last) in place. last is one past the final
-// element.
-void reverseRange(int *first, int *last) {
-    // TODO: swap elements from both ends, moving the two pointers toward each
-    // other
-    for (int *p = first; p < (last - first) / 2 + first; ++p) {
-        int *l = first + (last - p) - 1;
-        int c = *p;
-        *p = *l;
-        *l = c;
+// Make cap equal to size. With nothing stored, release the block entirely.
+void shrink(IntArray &a) {
+    // TODO: give back the unused room
+    if (a.size == 0) {
+        delete[] a.data;
+        a.data = nullptr;
+        a.cap = 0;
+        return;
     }
+    int *smaller = new int[a.size];
+    for (int i = 0; i < a.size; ++i) {
+        smaller[i] = a.data[i];
+    }
+    delete[] a.data;
+    a.data = smaller;
+    a.cap = a.size;
+}
+
+// Release the block and leave a valid empty array behind.
+void destroy(IntArray &a) {
+    // TODO: release the block
+    delete[] a.data;
+    a.data = nullptr;
+    a.size = 0;
+    a.cap = 0;
+}
+
+static void status(const IntArray &a) {
+    std::cout << "size=" << a.size << " cap=" << a.cap << " live=" << g_live
+              << "\n";
 }
 
 int main() {
-    int a[1000];
-    int n = 0;
-    std::cin >> n;
-    for (int *p = a; p != a + n; ++p)
-        std::cin >> *p;
-
-    const int *best = lastMax(a, a + n);
-    if (best == a + n) {
-        std::cout << "empty\n";
-        return 0;
+    IntArray a = {nullptr, 0, 0};
+    std::string cmd;
+    while (std::cin >> cmd) {
+        if (cmd == "push") {
+            int x;
+            std::cin >> x;
+            push(a, x);
+            std::cout << "push " << x << " -> ";
+            status(a);
+        } else if (cmd == "pop") {
+            if (a.size == 0) {
+                std::cout << "pop -> empty\n";
+            } else {
+                a.size -= 1;
+                std::cout << "pop -> " << a.data[a.size] << " size=" << a.size
+                          << " cap=" << a.cap << "\n";
+            }
+        } else if (cmd == "get") {
+            int i;
+            std::cin >> i;
+            if (i < 0 || i >= a.size)
+                std::cout << "get " << i << " -> out of range\n";
+            else
+                std::cout << "get " << i << " -> " << a.data[i] << "\n";
+        } else if (cmd == "print") {
+            std::cout << "[";
+            for (int i = 0; i < a.size; ++i)
+                std::cout << (i ? " " : "") << a.data[i];
+            std::cout << "] size=" << a.size << " cap=" << a.cap << "\n";
+        } else if (cmd == "shrink") {
+            shrink(a);
+            std::cout << "shrink -> ";
+            status(a);
+        } else if (cmd == "clear") {
+            destroy(a);
+            std::cout << "clear -> ";
+            status(a);
+        }
     }
-    std::ptrdiff_t index =
-        best - a; // TODO: how far is best from the start of a?
-    std::cout << "max=" << *best << " index=" << index << "\n";
-
-    reverseRange(a, a + n);
-    for (const int *p = a; p != a + n; ++p) {
-        if (p != a)
-            std::cout << " ";
-        std::cout << *p;
-    }
-    std::cout << "\n";
+    destroy(a);
+    std::cout << "live=" << g_live << "\n";
     return 0;
 }
