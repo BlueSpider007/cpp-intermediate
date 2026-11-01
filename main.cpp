@@ -1,35 +1,52 @@
 #include <cstddef>
 #include <iostream>
 
-// Return a pointer to the LAST occurrence of the largest value in [first, last).
-// Return last itself when the range is empty.
-const int* lastMax(const int* first, const int* last) {
-    // TODO: walk the range with a pointer and remember where the best value sits
-    return last;
+// Return a pointer to the LAST occurrence of the largest value in [first,
+// last). Return last itself when the range is empty.
+const int *lastMax(const int *first, const int *last) {
+    // TODO: walk the range with a pointer and remember where the best value
+    // sits
+    const int *max = first;
+    for (const int *p = first; p < last; ++p) {
+        if (*p >= *max)
+            max = p;
+    }
+    return max;
 }
 
-// Reverse the elements of [first, last) in place. last is one past the final element.
-void reverseRange(int* first, int* last) {
-    // TODO: swap elements from both ends, moving the two pointers toward each other
+// Reverse the elements of [first, last) in place. last is one past the final
+// element.
+void reverseRange(int *first, int *last) {
+    // TODO: swap elements from both ends, moving the two pointers toward each
+    // other
+    for (int *p = first; p < (last - first) / 2 + first; ++p) {
+        int *l = first + (last - p) - 1;
+        int c = *p;
+        *p = *l;
+        *l = c;
+    }
 }
 
 int main() {
     int a[1000];
     int n = 0;
     std::cin >> n;
-    for (int* p = a; p != a + n; ++p) std::cin >> *p;
+    for (int *p = a; p != a + n; ++p)
+        std::cin >> *p;
 
-    const int* best = lastMax(a, a + n);
+    const int *best = lastMax(a, a + n);
     if (best == a + n) {
         std::cout << "empty\n";
         return 0;
     }
-    std::ptrdiff_t index = 0;  // TODO: how far is best from the start of a?
+    std::ptrdiff_t index =
+        best - a; // TODO: how far is best from the start of a?
     std::cout << "max=" << *best << " index=" << index << "\n";
 
     reverseRange(a, a + n);
-    for (const int* p = a; p != a + n; ++p) {
-        if (p != a) std::cout << " ";
+    for (const int *p = a; p != a + n; ++p) {
+        if (p != a)
+            std::cout << " ";
         std::cout << *p;
     }
     std::cout << "\n";
