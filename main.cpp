@@ -34,22 +34,43 @@ int main() {
         if (cmd == "open") {
             // TODO: refuse a name that is already open, otherwise build it and
             // take ownership
-            if (handles.count(a) == 0) {
+            if (handles.count(a)) {
+                std::cout << "error " << a << " exists\n";
+            } else {
                 handles[a] = std::shared_ptr<Resource>(build(a));
             }
         } else if (cmd == "share") {
             // TODO: b joins the ownership of a
-            handles[b] = handles[a];
+            auto source = handles.find(a);
+
+            if (source == handles.end() || !source->second) {
+                std::cout << "error " << a << "missing\n";
+            } else if (handles.count(b)) {
+                std::cout << "error " << b << " exists\n";
+            } else {
+                handles[b] = source->second;
+            }
         } else if (cmd == "drop") {
             // TODO: release the handle named a
-            handles[a].reset();
-            handles.erase(a);
+            auto it = handles.find(a);
+            if (it != handles.end()) {
+                it->second.reset();
+                handles.erase(it);
+            }
         } else if (cmd == "watch") {
             // TODO: observer b watches the object behind a, without owning it
-            observers[b] = std::weak_ptr<Resource>(handles[a]);
+            auto source = handles.find(a);
+            if (source == handles.end() || !source->second) {
+                std::cout << "error " << a << "missing\n";
+            } else {
+                observers[b] = source->second;
+            }
         } else if (cmd == "peek") {
             // TODO: report what observer a sees
-            if (auto resource = observers[a].lock()) {
+            auto observer = observers.find(a);
+            if (observer == observers.end()) {
+                std::cout << "error " << a << " unknown\n";
+            } else if (auto resource = observer->second.lock()) {
                 std::cout << "alive " << resource->name()
                           << " owners=" << resource.use_count() - 1 << "\n";
             } else {
@@ -57,7 +78,9 @@ int main() {
             }
         } else if (cmd == "owners") {
             // TODO: report how many handles own a
-            std::cout << "owners " << a << "=" << handles[a].use_count()
+            auto it = handles.find(a);
+            std::cout << "owners " << a << "="
+                      << (it == handles.end() ? 0 : it->second.use_count())
                       << "\n";
         }
     }
