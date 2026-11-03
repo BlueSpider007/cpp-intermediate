@@ -1,95 +1,116 @@
+#include <algorithm>
+#include <cstdlib>
 #include <iostream>
-#include <map>
-#include <memory>
-#include <sstream>
+#include <new>
 #include <string>
 
-class Resource {
-  public:
-    explicit Resource(const std::string &name) : name_(name) {
-        std::cout << "open " << name_ << "\n";
+// Live-block counter: +1 for every array block new[] hands out, -1 for every
+// block delete[] gives back. A correct program ends with 0.
+static int g_live = 0;
+
+void *operator new[](std::size_t n) {
+    void *p = std::malloc(n ? n : 1);
+    if (!p)
+        throw std::bad_alloc();
+    ++g_live;
+    return p;
+}
+void operator delete[](void *p) noexcept {
+    if (p) {
+        --g_live;
+        std::free(p);
     }
-    ~Resource() { std::cout << "close " << name_ << "\n"; }
-    const std::string &name() const { return name_; }
-
-  private:
-    std::string name_;
-};
-
-// Hands a fresh, solely-owned Resource to the caller.
-std::unique_ptr<Resource> build(const std::string &name) {
-    return std::make_unique<Resource>(name);
+}
+void operator delete[](void *p, std::size_t) noexcept {
+    if (p) {
+        --g_live;
+        std::free(p);
+    }
 }
 
+class IntBuffer {
+  public:
+    explicit IntBuffer(std::size_t n) : data_(new int[n]()), size_(n) {}
+
+    int get(std::size_t i) const { return data_[i]; }
+    void set(std::size_t i, int v) { data_[i] = v; }
+    std::size_t size() const { return size_; }
+
+    // TODO: destructor
+    ~IntBuffer() { delete[] data_; }
+
+    // TODO: copy constructor (builds a new IntBuffer from an existing one)
+    IntBuffer(const IntBuffer &src)
+        : data_(new int[src.size_]), size_(src.size_) {
+        std::copy(src.data_, src.data_ + size_, data_);
+    }
+
+    // TODO: copy assignment operator (overwrites an existing IntBuffer)
+    IntBuffer &operator=(const IntBuffer &src) {
+        if (this == &src) {
+            return *this;
+        }
+        delete[] data_;
+        size_ = src.size_;
+        data_ = new int[size_];
+        std::copy(src.data_, src.data_ + size_, data_);
+        return *this;
+    }
+
+  private:
+    int *data_;
+    std::size_t size_;
+};
+
 int main() {
-    std::map<std::string, std::shared_ptr<Resource>> handles;
-    std::map<std::string, std::weak_ptr<Resource>> observers;
-
-    std::string line;
-    while (std::getline(std::cin, line)) {
-        std::istringstream in(line);
-        std::string cmd, a, b;
-        in >> cmd >> a >> b; // unused words stay empty
-
-        if (cmd == "open") {
-            // TODO: refuse a name that is already open, otherwise build it and
-            // take ownership
-            if (handles.count(a)) {
-                std::cout << "error " << a << " exists\n";
-            } else {
-                handles[a] = std::shared_ptr<Resource>(build(a));
+    IntBuffer *slot[3] = {nullptr, nullptr, nullptr}; // slots a, b, c
+    std::string cmd;
+    while (std::cin >> cmd) {
+        if (cmd == "make") { // make <slot> <n> <n values>
+            char s;
+            std::size_t n;
+            std::cin >> s >> n;
+            delete slot[s - 'a'];
+            slot[s - 'a'] = new IntBuffer(n);
+            for (std::size_t i = 0; i < n; ++i) {
+                int v;
+                std::cin >> v;
+                slot[s - 'a']->set(i, v);
             }
-        } else if (cmd == "share") {
-            // TODO: b joins the ownership of a
-            auto source = handles.find(a);
-
-            if (source == handles.end() || !source->second) {
-                std::cout << "error " << a << " missing\n";
-            } else if (handles.count(b)) {
-                std::cout << "error " << b << " exists\n";
-            } else {
-                handles[b] = source->second;
-            }
-        } else if (cmd == "drop") {
-            // TODO: release the handle named a
-            auto it = handles.find(a);
-            if (it != handles.end()) {
-                it->second.reset();
-                handles.erase(it);
-            } else {
-                std::cout << "error " << a << " missing\n";
-            }
-        } else if (cmd == "watch") {
-            // TODO: observer b watches the object behind a, without owning it
-            auto source = handles.find(a);
-            if (source == handles.end() || !source->second) {
-                std::cout << "error " << a << " missing\n";
-            } else {
-                observers[b] = source->second;
-            }
-        } else if (cmd == "peek") {
-            // TODO: report what observer a sees
-            auto observer = observers.find(a);
-            if (observer == observers.end()) {
-                std::cout << "error " << a << " unknown\n";
-            } else if (auto resource = observer->second.lock()) {
-                std::cout << "alive " << resource->name()
-                          << " owners=" << resource.use_count() - 1 << "\n";
-            } else {
-                std::cout << "expired\n";
-            }
-        } else if (cmd == "owners") {
-            // TODO: report how many handles own a
-            auto it = handles.find(a);
-            std::cout << "owners " << a << "="
-                      << (it == handles.end() ? 0 : it->second.use_count())
-                      << "\n";
+        } else if (cmd == "clone") { // clone <slot>
+            char s;
+            std::cin >> s;
+            IntBuffer t(*slot[s - 'a']); // copy-construct a temporary
+            if (t.size() > 0)
+                t.set(0, 100);
+            long long sum = 0;
+            for (std::size_t i = 0; i < t.size(); ++i)
+                sum += t.get(i);
+            std::cout << "clone sum=" << sum << "\n";
+        } else if (cmd == "assign") { // assign <dest> <src>
+            char d, s;
+            std::cin >> d >> s;
+            *slot[d - 'a'] = *slot[s - 'a'];
+        } else if (cmd == "set") { // set <slot> <index> <value>
+            char s;
+            std::size_t i;
+            int v;
+            std::cin >> s >> i >> v;
+            slot[s - 'a']->set(i, v);
+        } else if (cmd == "show") { // show <slot>
+            char s;
+            std::cin >> s;
+            const IntBuffer &b = *slot[s - 'a'];
+            std::cout << s << "[" << b.size() << "]:";
+            for (std::size_t i = 0; i < b.size(); ++i)
+                std::cout << " " << b.get(i);
+            std::cout << "\n";
+        } else if (cmd == "live") {
+            std::cout << "live=" << g_live << "\n";
         }
     }
-
-    // TODO: release every remaining handle, in sorted-name order
-    for (auto &i : handles) {
-        i.second.reset();
-    }
+    for (int k = 0; k < 3; ++k)
+        delete slot[k];
+    std::cout << "live=" << g_live << "\n";
     return 0;
 }
