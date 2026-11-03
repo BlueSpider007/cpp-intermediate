@@ -1,116 +1,181 @@
-#include <algorithm>
 #include <cstdlib>
 #include <iostream>
+#include <map>
 #include <new>
+#include <sstream>
 #include <string>
+#include <utility>
+#include <vector>
 
-// Live-block counter: +1 for every array block new[] hands out, -1 for every
-// block delete[] gives back. A correct program ends with 0.
-static int g_live = 0;
+// Given: counters for the exercise. `live` counts blocks obtained with new[]
+// that have not been released with delete[] yet.
+static int live = 0;
+static int copies = 0;
+static int moves = 0;
 
 void *operator new[](std::size_t n) {
     void *p = std::malloc(n ? n : 1);
     if (!p)
         throw std::bad_alloc();
-    ++g_live;
+    ++live;
     return p;
 }
 void operator delete[](void *p) noexcept {
     if (p) {
-        --g_live;
+        --live;
         std::free(p);
     }
 }
 void operator delete[](void *p, std::size_t) noexcept {
     if (p) {
-        --g_live;
+        --live;
         std::free(p);
     }
 }
 
 class IntBuffer {
   public:
-    explicit IntBuffer(std::size_t n) : data_(new int[n]()), size_(n) {}
-
-    int get(std::size_t i) const { return data_[i]; }
-    void set(std::size_t i, int v) { data_[i] = v; }
-    std::size_t size() const { return size_; }
-
-    // TODO: destructor
+    IntBuffer() : data_(nullptr), size_(0) {}
+    explicit IntBuffer(int n)
+        : data_(n > 0 ? new int[n]() : nullptr), size_(n > 0 ? n : 0) {}
     ~IntBuffer() { delete[] data_; }
 
-    // TODO: copy constructor (builds a new IntBuffer from an existing one)
-    IntBuffer(const IntBuffer &src)
-        : data_(new int[src.size_]), size_(src.size_) {
-        std::copy(src.data_, src.data_ + size_, data_);
+    IntBuffer(const IntBuffer &other)
+        : data_(other.size_ > 0 ? new int[other.size_] : nullptr),
+          size_(other.size_) {
+        ++copies;
+        for (int i = 0; i < size_; ++i)
+            data_[i] = other.data_[i];
     }
-
-    // TODO: copy assignment operator (overwrites an existing IntBuffer)
-    IntBuffer &operator=(const IntBuffer &src) {
-        if (this == &src) {
+    IntBuffer &operator=(const IntBuffer &other) {
+        ++copies;
+        if (this == &other)
             return *this;
-        }
         delete[] data_;
-        size_ = src.size_;
-        data_ = new int[size_];
-        std::copy(src.data_, src.data_ + size_, data_);
+        size_ = other.size_;
+        data_ = size_ > 0 ? new int[size_] : nullptr;
+        for (int i = 0; i < size_; ++i)
+            data_[i] = other.data_[i];
         return *this;
     }
 
+    // TODO: the move constructor IntBuffer(IntBuffer&&) and the move assignment
+    // operator=(IntBuffer&&). Both must do `++moves;` as their first
+    // statement, the way the copy members do `++copies;`.
+    // Declaring the copy members suppressed the implicit moves, so until you
+    // write these every "move" below quietly becomes a copy.
+    IntBuffer(IntBuffer &&o) noexcept : data_(o.data_), size_(o.size_) {
+        ++moves;
+        o.data_ = nullptr;
+        o.size_ = 0;
+    }
+    IntBuffer &operator=(IntBuffer &&o) noexcept {
+        ++moves;
+        if (this != &o) {
+            delete[] data_;
+            data_ = o.data_;
+            o.data_ = nullptr;
+            size_ = o.size_;
+            o.size_ = 0;
+        }
+        return *this;
+    }
+
+    void fill(const std::vector<int> &values) {
+        delete[] data_;
+        size_ = static_cast<int>(values.size());
+        data_ = size_ > 0 ? new int[size_] : nullptr;
+        for (int i = 0; i < size_; ++i)
+            data_[i] = values[i];
+    }
+    int size() const { return size_; }
+    int at(int i) const { return data_[i]; }
+
   private:
     int *data_;
-    std::size_t size_;
+    int size_;
 };
 
-int main() {
-    IntBuffer *slot[3] = {nullptr, nullptr, nullptr}; // slots a, b, c
-    std::string cmd;
-    while (std::cin >> cmd) {
-        if (cmd == "make") { // make <slot> <n> <n values>
-            char s;
-            std::size_t n;
-            std::cin >> s >> n;
-            delete slot[s - 'a'];
-            slot[s - 'a'] = new IntBuffer(n);
-            for (std::size_t i = 0; i < n; ++i) {
-                int v;
-                std::cin >> v;
-                slot[s - 'a']->set(i, v);
-            }
-        } else if (cmd == "clone") { // clone <slot>
-            char s;
-            std::cin >> s;
-            IntBuffer t(*slot[s - 'a']); // copy-construct a temporary
-            if (t.size() > 0)
-                t.set(0, 100);
-            long long sum = 0;
-            for (std::size_t i = 0; i < t.size(); ++i)
-                sum += t.get(i);
-            std::cout << "clone sum=" << sum << "\n";
-        } else if (cmd == "assign") { // assign <dest> <src>
-            char d, s;
-            std::cin >> d >> s;
-            *slot[d - 'a'] = *slot[s - 'a'];
-        } else if (cmd == "set") { // set <slot> <index> <value>
-            char s;
-            std::size_t i;
-            int v;
-            std::cin >> s >> i >> v;
-            slot[s - 'a']->set(i, v);
-        } else if (cmd == "show") { // show <slot>
-            char s;
-            std::cin >> s;
-            const IntBuffer &b = *slot[s - 'a'];
-            std::cout << s << "[" << b.size() << "]:";
-            for (std::size_t i = 0; i < b.size(); ++i)
-                std::cout << " " << b.get(i);
+static std::string show(const IntBuffer &b) {
+    std::string out = "[";
+    for (int i = 0; i < b.size(); ++i) {
+        if (i > 0)
+            out += ", ";
+        out += std::to_string(b.at(i));
+    }
+    return out + "]";
+}
+
+static void report(const std::string &label) {
+    std::cout << label << ": copies=" << copies << " moves=" << moves;
+}
+
+static void run() {
+    std::map<std::string, IntBuffer> slots;
+    std::string line;
+    while (std::getline(std::cin, line)) {
+        std::istringstream in(line);
+        std::string cmd;
+        if (!(in >> cmd))
+            continue;
+        copies = 0;
+        moves = 0;
+        if (cmd == "make") {
+            std::string s;
+            int n;
+            in >> s >> n;
+            std::vector<int> values(n);
+            for (int i = 0; i < n; ++i)
+                in >> values[i];
+            slots[s].fill(values);
+        } else if (cmd == "show") {
+            std::string s;
+            in >> s;
+            std::cout << s << " = " << show(slots[s]) << "\n";
+        } else if (cmd == "push_copy") {
+            std::string s;
+            int n;
+            in >> s >> n;
+            std::vector<IntBuffer> bag;
+            for (int i = 0; i < n; ++i)
+                bag.push_back(slots[s]);
+            report("push_copy");
             std::cout << "\n";
-        } else if (cmd == "live") {
-            std::cout << "live=" << g_live << "\n";
+        } else if (cmd == "push_move") {
+            std::string s;
+            in >> s;
+            std::vector<IntBuffer> bag;
+            // TODO: hand the buffer over, do not copy it
+            bag.push_back(std::move(slots[s]));
+            report("push_move");
+            std::cout << " src=" << slots[s].size() << "\n";
+        } else if (cmd == "grow") {
+            int n;
+            in >> n;
+            std::vector<IntBuffer> bag;
+            for (int i = 0; i < n; ++i)
+                bag.push_back(IntBuffer(2));
+            report("grow " + std::to_string(n));
+            std::cout << "\n";
+        } else if (cmd == "take") {
+            std::string from, to;
+            in >> from >> to;
+            // TODO: hand the buffer over, do not copy it
+            slots[to] = std::move(slots[from]);
+            report("take");
+            std::cout << " src=" << slots[from].size() << "\n";
+        } else if (cmd == "swap") {
+            std::string x, y;
+            in >> x >> y;
+            std::swap(slots[x], slots[y]);
+            report("swap");
+            std::cout << "\n";
         }
     }
-    for (int k = 0; k < 3; ++k)
-        delete slot[k];
-    std::cout << "live=" << g_live << "\n";
+}
+
+int main() {
+    run();
+    std::cout << "live=" << live << "\n";
     return 0;
 }
